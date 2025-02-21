@@ -3,14 +3,30 @@
 #include <stdint.h>
 #include <assert.h>
 
-#define BM_STACK_CAPACITY 1024
+#define BM_STACK_CAPACITY 1
 
 typedef enum {
-    TRAP_OK = 0,
-    TRAP_STACK_OVERFLOW,
-    TRAP_STACK_UNDERFLOW,
-    TRAP_ILLEGAL_INST,
-} Trap;
+    ERR_OK = 0,
+    ERR_STACK_OVERFLOW,
+    ERR_STACK_UNDERFLOW,
+    ERR_ILLEGAL_INST,
+} Err;
+
+const char *err_as_cstr(Err err)
+{
+    switch (err) {
+    case ERR_OK:
+        return "ERR_OK";
+    case ERR_STACK_OVERFLOW:
+        return "ERR_STACK_OVERFLOW";
+    case ERR_STACK_UNDERFLOW:
+        return "ERR_STACK_UNDERFLOW";
+    case ERR_ILLEGAL_INST:
+        return "ERR_ILLEGAL_INST";
+    default:
+        assert(0 && "err_as_cstr: Unreachable");
+    }
+}
 
 typedef int64_t Word;
 
@@ -29,65 +45,66 @@ typedef struct {
     Word operand;
 } Inst;
 
-Inst inst_push(Word operand)
-{
-    return (Inst) {
-        .type = INST_PUSH,
-        .operand = operand,
-    };
-}
+#define MAKE_INST_PUSH(value) ((Inst) {.type = INST_PUSH, .operand = (value)})
+#define MAKE_INST_PLUS (Inst) {.type = INST_PLUS}
 
-Inst inst_plus(void)
-{
-    return (Inst) {.type = INST_PLUS};
-}
-
-Trap bm_execute_inst(Bm *bm, Inst inst)
+Err bm_execute_inst(Bm *bm, Inst inst)
 {
     switch(inst.type) {
     case INST_PUSH:
         if(bm->stack_size >= BM_STACK_CAPACITY) {
-            return TRAP_STACK_OVERFLOW;
+            return ERR_STACK_OVERFLOW;
         }
         bm->stack[bm->stack_size++] = inst.operand;
         break;
 
     case INST_PLUS:
         if (bm->stack_size < 2) {
-            return TRAP_STACK_UNDERFLOW;
+            return ERR_STACK_UNDERFLOW;
         }
         bm->stack[bm->stack_size - 2] += bm->stack[bm->stack_size -1];
         bm->stack_size -= 1;
         break;
 
     default:
-        return TRAP_ILLEGAL_INST;
+        return ERR_ILLEGAL_INST;
     }
-    return TRAP_OK;
+    return ERR_OK;
 }
 
-void bm_dump(const Bm *bm)
+void bm_dump(FILE *stream, const Bm *bm)
 {
-    printf("Stack:\n");
+    fprintf(stream, "Stack:\n");
     if (bm->stack_size > 0) {
         for (size_t i = 0; i < bm->stack_size; ++i) {
-            printf("  %ld\n", bm->stack[i]);
+            fprintf(stream, "  %ld\n", bm->stack[i]);
         }
     } else {
-        printf("  [empty]\n");
+        fprintf(stream, "  [empty]\n");
     }
 }
+
+#define ARRAY_SIZE(xs) (sizeof(xs) / sizeof((xs[0])))
 
 Bm bm = {0};
 
+Inst program[] = {
+    //MAKE_INST_PUSH(69),
+    //MAKE_INST_PUSH(420),
+    MAKE_INST_PLUS,
+};
+
 int main()
 {
-    bm_dump(&bm);
-    bm_execute_inst(&bm, inst_push(69));
-    bm_dump(&bm);
-    bm_execute_inst(&bm, inst_push(420));
-    bm_dump(&bm);
-    bm_execute_inst(&bm, inst_plus());
-    bm_dump(&bm);
+    bm_dump(stdout, &bm);
+    for (size_t i = 0; i < ARRAY_SIZE(program); ++i) {
+        Err err = bm_execute_inst(&bm, program[i]);
+        if (err != ERR_OK) {
+            fprintf(stderr, "Error activated: %s\n", err_as_cstr(err));
+            bm_dump(stderr, &bm);
+            exit(1);
+        }
+    }
+    bm_dump(stdout, &bm);
     return 0;
 }
